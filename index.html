@@ -5,17 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
-    <title>Heritage Postbox v0.7.1</title>
+    <title>Heritage Postbox v0.8.0</title>
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css" />
-    
-    <!-- React -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    
-    <!-- Leaflet JS -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
     
     <style>
         * { 
@@ -50,26 +43,85 @@
 <body>
     <div id="root"></div>
     
-    <script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyD7ru5fPR4LRpnVfb9ImBEs6kf8-mQ5l54",
+            authDomain: "heritage-postbox.firebaseapp.com",
+            projectId: "heritage-postbox",
+            storageBucket: "heritage-postbox.firebasestorage.app",
+            messagingSenderId: "805684480299",
+            appId: "1:805684480299:web:2deb544ac5c7f87a93dd6e"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Make available globally
+        window.firebaseAuth = auth;
+        window.firebaseDb = db;
+        window.firebaseSignInAnonymously = signInAnonymously;
+        window.firebaseOnAuthStateChanged = onAuthStateChanged;
+        window.firebaseCollection = collection;
+        window.firebaseAddDoc = addDoc;
+        window.firebaseOnSnapshot = onSnapshot;
+        window.firebaseQuery = query;
+        window.firebaseOrderBy = orderBy;
+        window.firebaseDeleteDoc = deleteDoc;
+        window.firebaseDoc = doc;
+        window.firebaseUpdateDoc = updateDoc;
+        window.firebaseServerTimestamp = serverTimestamp;
+
+        // Auto sign in anonymously
+        signInAnonymously(auth).catch(error => console.error("Auth error:", error));
+
+        // Load React after Firebase is ready
+        const reactScript = document.createElement('script');
+        reactScript.src = 'https://unpkg.com/react@18/umd/react.development.js';
+        reactScript.crossOrigin = 'anonymous';
+        reactScript.onload = () => {
+            const reactDomScript = document.createElement('script');
+            reactDomScript.src = 'https://unpkg.com/react-dom@18/umd/react-dom.development.js';
+            reactDomScript.crossOrigin = 'anonymous';
+            reactDomScript.onload = () => {
+                const leafletScript = document.createElement('script');
+                leafletScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js';
+                leafletScript.onload = () => {
+                    // All dependencies loaded, start app
+                    initApp();
+                };
+                document.head.appendChild(leafletScript);
+            };
+            document.head.appendChild(reactDomScript);
+        };
+        document.head.appendChild(reactScript);
+
+        function initApp() {
 // © 2025 Insight Geospatial, Eurotech Marine Data Services Ltd. All rights reserved.
 // Author: Barry Ward
 // License: Proprietary – Not for redistribution without written consent.
 
 /*
  * Script: Heritage Postbox Logger
- * Version: 0.7.1
- * Last Modified: 2025-02-13 20:15:00
+ * Version: 0.8.0
+ * Last Modified: 2025-02-13 21:00:00
  * 
  * Changelog:
- * v0.7.1 - 2025-02-13
- * - Implemented rarity-based icons for user-logged postboxes (Red, Violet, Gold)
- * - Fixed bug where user markers were not cleared on map re-render
- * - Updated app name to "Heritage Postbox"
+ * v0.8.0 - 2025-02-13
+ * - MAJOR: Integrated Firebase Firestore for collaborative backend
+ * - Real-time data sync across all users
+ * - Anonymous authentication (no login required)
+ * - Cloud storage for postbox entries
+ * - Removed localStorage (now uses Firestore)
  * 
- * v0.7.0 - 2025-02-13
- * - Re-instated dynamic Overpass API fetching for live data
- * - Integrated LBSG (Letter Box Study Group) rarity and classification model
- * - Complete implementation with all components
+ * v0.7.1 - 2025-02-13
+ * - Implemented rarity-based icons for user-logged postboxes
+ * - Fixed bug where user markers were not cleared on map re-render
  */
 
 const { useState, useEffect, useRef, useCallback } = React;
@@ -139,9 +191,8 @@ const MapView = ({ userPostboxes, officialPostboxes, userLocation, onMapClick, o
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const officialMarkersRef = useRef([]);
-  const userMarkersRef = useRef([]); // Track user markers separately
+  const userMarkersRef = useRef([]);
 
-  // Define User Icons (Rarity-based)
   const userIconDefault = new window.L.Icon({ iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
   const userIconRare = new window.L.Icon({ iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-violet.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
   const userIconLegendary = new window.L.Icon({ iconUrl: 'https://cdn.rawgit.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] });
@@ -170,14 +221,12 @@ const MapView = ({ userPostboxes, officialPostboxes, userLocation, onMapClick, o
   
   useEffect(() => {
     if (mapInstanceRef.current) {
-        // Clear both official and user markers
         officialMarkersRef.current.forEach(marker => marker.remove());
         officialMarkersRef.current = [];
         
         userMarkersRef.current.forEach(marker => marker.remove());
         userMarkersRef.current = [];
 
-        // Draw Official Markers (grey)
         if (Array.isArray(officialPostboxes)) {
             officialPostboxes.forEach(p => {
                 const marker = window.L.marker([p.lat, p.lon], { icon: greyIcon }).addTo(mapInstanceRef.current).bindPopup(`Existing Postbox<br><small>${p.tags?.ref || ''}</small>`);
@@ -185,16 +234,15 @@ const MapView = ({ userPostboxes, officialPostboxes, userLocation, onMapClick, o
             });
         }
         
-        // Draw User Markers with Rarity-based Icons
         userPostboxes.forEach(p => {
             const rarity = getRarityInfo(p.type);
-            let icon = userIconDefault; // Red (common)
-            if (rarity.level >= 10) icon = userIconLegendary; // Gold (museum piece)
-            else if (rarity.level >= 8) icon = userIconRare; // Violet (rare)
+            let icon = userIconDefault;
+            if (rarity.level >= 10) icon = userIconLegendary;
+            else if (rarity.level >= 8) icon = userIconRare;
 
             const marker = window.L.marker([p.lat, p.lng], { icon: icon })
                 .addTo(mapInstanceRef.current)
-                .bindPopup(`<b>My Find:</b> ${p.type || 'Postbox'}`);
+                .bindPopup(`<b>Community Find:</b> ${p.type || 'Postbox'}<br><small>Added: ${new Date(p.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}</small>`);
             
             userMarkersRef.current.push(marker);
         });
@@ -206,6 +254,7 @@ const MapView = ({ userPostboxes, officialPostboxes, userLocation, onMapClick, o
 
 const PostboxForm = ({ postbox, onSave, onCancel }) => {
   const [formData, setFormData] = useState({ photos: [], postboxCode: '', postcode: '', ...postbox });
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
 
   const updateField = (field, value) => setFormData(prev => ({ ...prev, [field]: value }));
@@ -224,6 +273,16 @@ const PostboxForm = ({ postbox, onSave, onCancel }) => {
   
   const removePhoto = (index) => {
       setFormData(prev => ({ ...prev, photos: prev.photos.filter((_, i) => i !== index) }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(formData);
+    } catch (error) {
+      alert('Error saving: ' + error.message);
+      setSaving(false);
+    }
   };
 
   const postboxTypes = [
@@ -271,7 +330,7 @@ const PostboxForm = ({ postbox, onSave, onCancel }) => {
         ),
         React.createElement('div', null,
             React.createElement('label', { style: { display: 'block', marginBottom: '5px', fontSize: '14px' } }, 'Photos'),
-            React.createElement('button', { onClick: () => fileInputRef.current.click(), style: { background: '#2563eb', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '5px', cursor: 'pointer', width: '100%' } }, '📷 Add Photos from Camera'),
+            React.createElement('button', { type: 'button', onClick: () => fileInputRef.current.click(), style: { background: '#2563eb', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '5px', cursor: 'pointer', width: '100%' } }, '📷 Add Photos from Camera'),
             React.createElement('input', {
                 ref: fileInputRef, type: 'file', accept: 'image/*', capture: 'environment', multiple: true, onChange: handlePhotoCapture, style: { display: 'none' }
             }),
@@ -279,14 +338,14 @@ const PostboxForm = ({ postbox, onSave, onCancel }) => {
                 (formData.photos || []).map((photo, index) =>
                     React.createElement('div', { key: index, style: { position: 'relative' } },
                         React.createElement('img', { src: photo.data, style: { width: '70px', height: '70px', objectFit: 'cover', borderRadius: '5px' } }),
-                        React.createElement('button', { onClick: () => removePhoto(index), style: { position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', border: '1px solid white', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' } }, '×')
+                        React.createElement('button', { type: 'button', onClick: () => removePhoto(index), style: { position: 'absolute', top: '-5px', right: '-5px', background: 'red', color: 'white', border: '1px solid white', borderRadius: '50%', width: '20px', height: '20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' } }, '×')
                     )
                 )
             )
         ),
         React.createElement('div', { style: { display: 'flex', gap: '10px', marginTop: '20px' } },
-            React.createElement('button', { onClick: () => onSave(formData), style: { flex: 1, background: '#dc2626', color: 'white', border: 'none', padding: '12px', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' } }, 'Save Postbox'),
-            React.createElement('button', { onClick: onCancel, style: { padding: '12px 20px', border: '1px solid #ccc', borderRadius: '5px', cursor: 'pointer', fontSize: '16px' } }, 'Cancel')
+            React.createElement('button', { onClick: handleSave, disabled: saving, style: { flex: 1, background: saving ? '#9ca3af' : '#dc2626', color: 'white', border: 'none', padding: '12px', borderRadius: '5px', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '16px' } }, saving ? 'Saving...' : 'Save Postbox'),
+            React.createElement('button', { onClick: onCancel, disabled: saving, style: { padding: '12px 20px', border: '1px solid #ccc', borderRadius: '5px', cursor: saving ? 'not-allowed' : 'pointer', fontSize: '16px' } }, 'Cancel')
         )
       )
     )
@@ -302,20 +361,37 @@ const PostboxLogger = () => {
   const [viewMode, setViewMode] = useState('map');
   const [userLocation, setUserLocation] = useState(null);
   const [toast, setToast] = useState(null);
-  const [playerStats, setPlayerStats] = useState({ totalFinds: 0, rarityScore: 0, level: 1, achievements: [] });
-  const [postSaveAction, setPostSaveAction] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   
+  // Firebase auth listener
   useEffect(() => {
-    const savedUserPostboxes = localStorage.getItem('postboxes_data_full');
-    if (savedUserPostboxes) setUserPostboxes(JSON.parse(savedUserPostboxes));
-    const savedStats = localStorage.getItem('player_stats_full');
-    if (savedStats) setPlayerStats(JSON.parse(savedStats));
+    const unsubscribe = window.firebaseOnAuthStateChanged(window.firebaseAuth, (user) => {
+      if (user) {
+        setAuthReady(true);
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
+  // Real-time Firestore listener
   useEffect(() => {
-    localStorage.setItem('postboxes_data_full', JSON.stringify(userPostboxes));
-    localStorage.setItem('player_stats_full', JSON.stringify(playerStats));
-  }, [userPostboxes, playerStats]);
+    if (!authReady) return;
+    
+    const q = window.firebaseQuery(
+      window.firebaseCollection(window.firebaseDb, 'postboxes'),
+      window.firebaseOrderBy('createdAt', 'desc')
+    );
+    
+    const unsubscribe = window.firebaseOnSnapshot(q, (snapshot) => {
+      const postboxes = [];
+      snapshot.forEach((doc) => {
+        postboxes.push({ id: doc.id, ...doc.data() });
+      });
+      setUserPostboxes(postboxes);
+    });
+    
+    return () => unsubscribe();
+  }, [authReady]);
 
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
@@ -337,17 +413,6 @@ const PostboxLogger = () => {
 
   const showToast = (title, message, type = 'info') => setToast({ title, message, type });
 
-  const checkAchievements = useCallback((newPostbox, allPostboxes, currentStats) => {
-    const newAchievements = [];
-    if (allPostboxes.length === 1 && !currentStats.achievements.find(a => a.id === 'first_find')) {
-        newAchievements.push({ id: 'first_find', title: 'First Steps!', message: 'You logged your first postbox!'});
-    }
-    if (getRarityInfo(newPostbox.type).level >= 9 && !currentStats.achievements.find(a => a.id === 'rare_find')) {
-        newAchievements.push({ id: 'rare_find', title: 'Treasure Hunter!', message: 'You found a very rare postbox!'});
-    }
-    return newAchievements;
-  }, []);
-  
   const handleMapClick = (latlng) => {
     setSelectedPostbox({ lat: latlng.lat, lng: latlng.lng, photos: [], postboxCode: '', postcode: '' });
   };
@@ -360,48 +425,49 @@ const PostboxLogger = () => {
       }
   };
   
-  const deletePostbox = (id) => {
+  const deletePostbox = async (id) => {
       if (confirm('Are you sure you want to delete this postbox?')) {
-          setUserPostboxes(prev => prev.filter(p => p.id !== id));
-          showToast('Postbox Deleted', 'The entry has been removed.');
+          try {
+              await window.firebaseDeleteDoc(window.firebaseDoc(window.firebaseDb, 'postboxes', id));
+              showToast('Postbox Deleted', 'The entry has been removed.');
+          } catch (error) {
+              alert('Error deleting: ' + error.message);
+          }
       }
   };
 
-  const savePostbox = (data) => {
-      const isEditing = !!data.id;
-      let updatedPostboxes;
-      let finalPostbox = data;
-
-      if (isEditing) {
-          updatedPostboxes = userPostboxes.map(p => p.id === data.id ? data : p);
-          showToast("Postbox Updated!", "Your changes have been saved.");
-      } else {
-          finalPostbox = { ...data, id: Date.now() };
-          updatedPostboxes = [...userPostboxes, finalPostbox];
-          
-          const rarity = getRarityInfo(finalPostbox.type);
-          const regionalBonus = getRegionalBonus(finalPostbox.lat, finalPostbox.lng);
-          const pointsEarned = (rarity.points || 0) + (regionalBonus ? regionalBonus.bonus : 0);
-          const newScore = playerStats.rarityScore + pointsEarned;
-          
-          const newAchievements = checkAchievements(finalPostbox, updatedPostboxes, playerStats);
-          
-          setPlayerStats(prev => ({
-              totalFinds: prev.totalFinds + 1,
-              rarityScore: newScore,
-              level: getPlayerLevel(newScore).level,
-              achievements: [...prev.achievements, ...newAchievements]
-          }));
-          
-          showToast("Postbox Added!", `+${pointsEarned} points! ${regionalBonus ? `(+${regionalBonus.bonus} bonus for ${regionalBonus.region})` : ''}`);
-          newAchievements.forEach((ach, index) => {
-              setTimeout(() => showToast(`🎉 ${ach.title}`, ach.message, 'achievement'), (index + 1) * 1500);
-          });
-          
-          setPostSaveAction(finalPostbox);
+  const savePostbox = async (data) => {
+      try {
+          if (data.id) {
+              // Update existing
+              const docRef = window.firebaseDoc(window.firebaseDb, 'postboxes', data.id);
+              await window.firebaseUpdateDoc(docRef, {
+                  ...data,
+                  updatedAt: window.firebaseServerTimestamp()
+              });
+              showToast("Postbox Updated!", "Your changes have been saved.");
+          } else {
+              // Add new
+              const postboxData = {
+                  ...data,
+                  lat: parseFloat(data.lat),
+                  lng: parseFloat(data.lng),
+                  createdAt: window.firebaseServerTimestamp(),
+                  userId: window.firebaseAuth.currentUser?.uid || 'anonymous'
+              };
+              
+              await window.firebaseAddDoc(window.firebaseCollection(window.firebaseDb, 'postboxes'), postboxData);
+              
+              const rarity = getRarityInfo(data.type);
+              const regionalBonus = getRegionalBonus(data.lat, data.lng);
+              const pointsEarned = (rarity.points || 0) + (regionalBonus ? regionalBonus.bonus : 0);
+              
+              showToast("Postbox Added!", `+${pointsEarned} points! ${regionalBonus ? `(+${regionalBonus.bonus} bonus for ${regionalBonus.region})` : ''}`);
+          }
+          setSelectedPostbox(null);
+      } catch (error) {
+          throw error;
       }
-      setUserPostboxes(updatedPostboxes);
-      setSelectedPostbox(null);
   };
   
   const generateFacebookPost = (postbox) => {
@@ -423,7 +489,7 @@ const PostboxLogger = () => {
           case 'map':
               return React.createElement(MapView, { userPostboxes, officialPostboxes, userLocation, onMapClick: handleMapClick, onMapViewChange: fetchPostboxesForView });
           case 'stats':
-              return React.createElement(PlayerStats, { playerStats, userPostboxes });
+              return React.createElement(PlayerStats, { userPostboxes });
           case 'list':
               return React.createElement(PostboxList, { postboxes: userPostboxes, onSelect: setSelectedPostbox, onDelete: deletePostbox, onShare: generateFacebookPost, onReport: generateMaintenanceEmail });
           default: return null;
@@ -434,10 +500,10 @@ const PostboxLogger = () => {
     React.createElement('header', { style: { background: '#991b1b', color: 'white', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' } },
       React.createElement('h1', { style: { margin: 0, fontSize: '18px' } }, 'Heritage Postbox'),
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
-        React.createElement('span', null, `${getPlayerLevel(playerStats.rarityScore).icon} ${playerStats.rarityScore}pts`),
+        React.createElement('span', { style: { fontSize: '12px', opacity: 0.9 } }, `🌐 ${userPostboxes.length} community finds`),
         React.createElement('button', { onClick: () => setViewMode('map'), style: {background: viewMode === 'map' ? '#ea580c' : '#7f1d1d', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'} }, 'Map'),
         React.createElement('button', { onClick: () => setViewMode('list'), style: {background: viewMode === 'list' ? '#ea580c' : '#7f1d1d', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'} }, 'List'),
-        React.createElement('button', { onClick: () => setViewMode('stats'), style: {background: viewMode === 'stats' ? '#ea580c' : '#7f1d1d', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'} }, '🏆 Stats'),
+        React.createElement('button', { onClick: () => setViewMode('stats'), style: {background: viewMode === 'stats' ? '#ea580c' : '#7f1d1d', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'} }, '📊 Stats'),
         React.createElement('button', { onClick: handleAddClick, style: { background: '#059669', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer'} }, '+ Add')
       )
     ),
@@ -447,29 +513,8 @@ const PostboxLogger = () => {
         postbox: selectedPostbox,
         onSave: savePostbox,
         onCancel: () => setSelectedPostbox(null)
-    }),
-    postSaveAction && React.createElement(PostSaveModal, {
-        postbox: postSaveAction,
-        onShare: generateFacebookPost,
-        onReport: generateMaintenanceEmail,
-        onClose: () => setPostSaveAction(null)
     })
   );
-};
-
-const PostSaveModal = ({ postbox, onShare, onReport, onClose }) => {
-    const canReport = postbox.condition === 'Poor' || postbox.condition === 'Derelict' || postbox.condition === 'Needs Maintenance';
-    return React.createElement('div', { style: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1500, padding: '10px' } },
-        React.createElement('div', { style: { background: 'white', padding: '25px', borderRadius: '8px', textAlign: 'center', width: '100%', maxWidth: '400px' } },
-            React.createElement('h2', { style: { marginTop: 0 } }, '✅ Success!'),
-            React.createElement('p', null, 'Your postbox has been logged. What would you like to do next?'),
-            React.createElement('div', { style: { display: 'grid', gap: '10px', marginTop: '20px' } },
-                React.createElement('a', { href: onShare(postbox), target: '_blank', rel: 'noopener noreferrer', style: { display: 'block', background: '#1877F2', color: 'white', textDecoration: 'none', padding: '12px', borderRadius: '5px' } }, 'Share to Facebook'),
-                canReport && React.createElement('a', { href: onReport(postbox), style: { display: 'block', background: '#f97316', color: 'white', textDecoration: 'none', padding: '12px', borderRadius: '5px' } }, '🔧 Report Maintenance Issue'),
-                React.createElement('button', { onClick: onClose, style: { background: '#6b7280', color: 'white', border: 'none', padding: '12px', borderRadius: '5px', cursor: 'pointer' } }, 'Close')
-            )
-        )
-    );
 };
 
 const PostboxList = ({ postboxes, onSelect, onDelete, onShare, onReport }) => {
@@ -482,8 +527,8 @@ const PostboxList = ({ postboxes, onSelect, onDelete, onShare, onReport }) => {
             React.createElement('p', null, `Condition: ${p.condition || 'N/A'}`),
             React.createElement('p', null, `Postbox Number: ${p.postboxCode || 'N/A'}`),
             React.createElement('p', null, `Postcode: ${p.postcode || 'N/A'}`),
+            React.createElement('p', { style: { fontSize: '12px', color: '#666' } }, `Added: ${new Date(p.createdAt?.seconds * 1000 || Date.now()).toLocaleDateString()}`),
             React.createElement('div', { style: { marginTop: '10px', display: 'flex', gap: '10px', flexWrap: 'wrap' } },
-                React.createElement('button', { onClick: () => onSelect(p), style: { padding: '5px 10px', borderRadius: '3px', border: '1px solid #ccc', cursor: 'pointer', background: 'white' } }, 'Edit'),
                 React.createElement('button', { onClick: () => onDelete(p.id), style: { padding: '5px 10px', borderRadius: '3px', border: '1px solid #ccc', cursor: 'pointer', background: 'white' } }, 'Delete'),
                 React.createElement('a', { href: onShare(p), target: '_blank', rel: 'noopener noreferrer', style: { padding: '5px 10px', borderRadius: '3px', border: '1px solid #ccc', textDecoration: 'none', color: 'black' } }, 'Share'),
                 (p.condition === 'Poor' || p.condition === 'Derelict' || p.condition === 'Needs Maintenance') && 
@@ -493,29 +538,28 @@ const PostboxList = ({ postboxes, onSelect, onDelete, onShare, onReport }) => {
     );
 };
 
-const PlayerStats = ({ playerStats, userPostboxes }) => {
-    const level = getPlayerLevel(playerStats.rarityScore);
+const PlayerStats = ({ userPostboxes }) => {
+    const totalPoints = userPostboxes.reduce((sum, p) => sum + (getRarityInfo(p.type).points || 0), 0);
+    const level = getPlayerLevel(totalPoints);
+    
     return React.createElement('div', { style: { padding: '20px' } },
         React.createElement('div', { style: { textAlign: 'center', background: 'white', padding: '20px', borderRadius: '8px' } },
             React.createElement('div', { style: { fontSize: '4rem' } }, level.icon),
-            React.createElement('h2', { style: { margin: '10px 0' } }, level.title),
-            React.createElement('p', null, `Level ${level.level} Hunter`)
+            React.createElement('h2', { style: { margin: '10px 0' } }, 'Community Stats'),
+            React.createElement('p', null, `${userPostboxes.length} postboxes documented`)
         ),
         React.createElement('div', { style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', margin: '20px 0' } },
             React.createElement('div', { style: { background: 'white', padding: '15px', borderRadius: '8px', textAlign: 'center' } },
-                React.createElement('h3', { style: { margin: 0 } }, playerStats.totalFinds),
-                React.createElement('p', { style: { margin: 0 } }, 'Total Finds')
+                React.createElement('h3', { style: { margin: 0 } }, userPostboxes.length),
+                React.createElement('p', { style: { margin: 0, fontSize: '14px' } }, 'Total Finds')
             ),
             React.createElement('div', { style: { background: 'white', padding: '15px', borderRadius: '8px', textAlign: 'center' } },
-                React.createElement('h3', { style: { margin: 0 } }, playerStats.rarityScore),
-                React.createElement('p', { style: { margin: 0 } }, 'Hunter Points')
+                React.createElement('h3', { style: { margin: 0 } }, totalPoints),
+                React.createElement('p', { style: { margin: 0, fontSize: '14px' } }, 'Community Points')
             )
         ),
-        React.createElement('div', { style: { background: 'white', padding: '20px', borderRadius: '8px' } },
-            React.createElement('h3', null, 'Achievements'),
-            playerStats.achievements.length > 0 ? 
-                React.createElement('ul', null, playerStats.achievements.map(a => React.createElement('li', { key: a.id }, `${a.title}: ${a.message}`))) :
-                React.createElement('p', null, 'No achievements yet. Keep hunting!')
+        React.createElement('div', { style: { background: '#dbeafe', padding: '15px', borderRadius: '8px', marginTop: '20px' } },
+            React.createElement('p', { style: { fontSize: '14px', margin: 0 } }, '🌐 All postboxes are now shared across all users in real-time!')
         )
     );
 };
@@ -523,7 +567,8 @@ const PlayerStats = ({ playerStats, userPostboxes }) => {
 // --- RENDER THE APP ---
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(PostboxLogger));
+
+        } // End initApp
     </script>
 </body>
-
 </html>
